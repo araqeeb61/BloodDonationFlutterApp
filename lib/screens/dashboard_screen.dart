@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import '../models/blood_request.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -78,8 +79,17 @@ class DashboardScreen extends StatelessWidget {
             return const Center(child: Text('No active requests.'));
           }
           // Filter and sort requests by createdAt in Dart
+          final currentUser = FirebaseAuth.instance.currentUser;
           final requests = snapshot.data!.docs
               .where((doc) => doc['createdAt'] != null && (doc['createdAt'] is Timestamp || doc['createdAt'] is DateTime))
+              .where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                // Exclude requests created by the current user (by email or userId)
+                if (currentUser == null) return true;
+                final userEmail = data['userEmail'] as String?;
+                final userId = data['userId'] as String?;
+                return (userEmail != currentUser.email) && (userId != currentUser.uid);
+              })
               .toList();
           requests.sort((a, b) {
             final aTime = a['createdAt'] is Timestamp
@@ -150,6 +160,11 @@ class DashboardScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       Text('Patient: ${req['patientName']?.toString() ?? ''}'),
+                      // Show creator's name if not my request and userName exists
+                      if (!isMyRequest && req['userName'] != null && req['userName'].toString().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text('Requested by: ${req['userName']?.toString() ?? ''}', style: const TextStyle(color: Colors.purple)),
+                      ],
                       const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -181,8 +196,29 @@ class DashboardScreen extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             ElevatedButton(
-                              onPressed: () {
-                                Navigator.pushNamed(context, '/request-details', arguments: req);
+                              onPressed: () async {
+                                final user = FirebaseAuth.instance.currentUser;
+                                if (user == null) return;
+                                // Update the request to set acceptedBy
+                                await FirebaseFirestore.instance.collection('blood_requests').doc(docId).update({
+                                  'acceptedBy': user.uid,
+                                });
+                                // Fetch the updated request document
+                                final updatedDoc = await FirebaseFirestore.instance.collection('blood_requests').doc(docId).get();
+                                final updatedReq = updatedDoc.data();
+                                if (updatedReq != null) {
+                                  // Convert to BloodRequest object
+                                  final bloodRequest = BloodRequest.fromJson({
+                                    ...updatedReq,
+                                    'id': docId, // ensure id is set
+                                    'createdAt': (updatedReq['createdAt'] is String)
+                                        ? updatedReq['createdAt']
+                                        : (updatedReq['createdAt'] is Timestamp)
+                                            ? (updatedReq['createdAt'] as Timestamp).toDate().toIso8601String()
+                                            : DateTime.now().toIso8601String(),
+                                  });
+                                  Navigator.pushNamed(context, '/request-details', arguments: bloodRequest);
+                                }
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.redAccent,

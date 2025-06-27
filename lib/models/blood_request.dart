@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class BloodRequest {
   final String id;
@@ -14,6 +13,9 @@ class BloodRequest {
   final bool isActive;
   final String? acceptedBy;
   final String? userEmail;
+  final double? donorLatitude;  // New field for donor's current latitude
+  final double? donorLongitude; // New field for donor's current longitude
+  final DateTime? lastLocationUpdate; // New field for tracking when location was last updated
 
   BloodRequest({
     required this.id,
@@ -29,6 +31,9 @@ class BloodRequest {
     this.isActive = true,
     this.acceptedBy,
     this.userEmail,
+    this.donorLatitude,
+    this.donorLongitude,
+    this.lastLocationUpdate,
   });
 
   Map<String, dynamic> toJson() {
@@ -46,26 +51,30 @@ class BloodRequest {
       'isActive': isActive,
       'acceptedBy': acceptedBy,
       'userEmail': userEmail,
+      'donorLatitude': donorLatitude,
+      'donorLongitude': donorLongitude,
+      'lastLocationUpdate': lastLocationUpdate?.toIso8601String(),
     };
   }
 
   factory BloodRequest.fromJson(Map<String, dynamic> json) {
     return BloodRequest(
-      id: json['id'],
-      userId: json['userId'],
-      bloodGroup: json['bloodGroup'],
-      hospital: json['hospital'],
-      latitude: json['latitude'] is double ? json['latitude'] : double.tryParse(json['latitude'].toString()) ?? 0.0,
-      longitude: json['longitude'] is double ? json['longitude'] : double.tryParse(json['longitude'].toString()) ?? 0.0,
-      contactNumber: json['contactNumber'],
-      patientName: json['patientName'],
-      urgency: json['urgency'],
-      createdAt: json['createdAt'] is DateTime
-          ? json['createdAt']
-          : (json['createdAt'] as Timestamp).toDate(),
-      isActive: json['isActive'],
-      acceptedBy: json['acceptedBy'],
-      userEmail: json['userEmail'],
+      id: json['id'] as String,
+      userId: json['userId'] as String,
+      bloodGroup: json['bloodGroup'] as String,
+      hospital: json['hospital'] as String,
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+      contactNumber: json['contactNumber'] as String,
+      patientName: json['patientName'] as String,
+      urgency: json['urgency'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      isActive: json['isActive'] as bool? ?? true,
+      acceptedBy: json['acceptedBy'] as String?,
+      userEmail: json['userEmail'] as String?,
+      donorLatitude: json['donorLatitude'] != null ? (json['donorLatitude'] as num).toDouble() : null,
+      donorLongitude: json['donorLongitude'] != null ? (json['donorLongitude'] as num).toDouble() : null,
+      lastLocationUpdate: json['lastLocationUpdate'] != null ? DateTime.parse(json['lastLocationUpdate'] as String) : null,
     );
   }
 }

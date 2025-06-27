@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import 'add_request_screen.dart';
+
 class MyRequestsScreen extends StatelessWidget {
   const MyRequestsScreen({super.key});
 
@@ -19,7 +21,10 @@ class MyRequestsScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('blood_requests')
-            .where('userEmail', isEqualTo: currentUser.email)
+            .where(Filter.or(
+              Filter('userEmail', isEqualTo: currentUser.email),
+              Filter('userId', isEqualTo: currentUser.uid),
+            ))
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -83,18 +88,26 @@ class MyRequestsScreen extends StatelessWidget {
                         children: [
                           TextButton(
                             onPressed: () async {
-                              await FirebaseFirestore.instance.collection('blood_requests').doc(docId).update({'isActive': false});
+                              await FirebaseFirestore.instance.collection('blood_requests').doc(docId).delete();
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Request closed.'), backgroundColor: Colors.green),
+                                const SnackBar(content: Text('Request deleted.'), backgroundColor: Colors.redAccent),
                               );
                             },
                             child: const Text('Close', style: TextStyle(color: Colors.redAccent)),
                           ),
                           TextButton(
                             onPressed: () {
-                              // TODO: Implement update request screen
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Edit feature coming soon!'), backgroundColor: Colors.blue),
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => AddRequestScreen(
+                                    key: UniqueKey(),
+                                    // Pass the request data as arguments for editing
+                                    // You will need to update AddRequestScreen to accept and handle this
+                                    requestData: req,
+                                    requestId: docId,
+                                  ),
+                                ),
                               );
                             },
                             child: const Text('Edit', style: TextStyle(color: Colors.blue)),

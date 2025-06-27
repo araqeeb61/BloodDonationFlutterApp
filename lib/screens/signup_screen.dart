@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -12,15 +14,54 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  String? _selectedBloodGroup;
+  final List<String> bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
   bool _isLoading = false;
 
   void _signup() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      // TODO: Implement signup logic
-      await Future.delayed(const Duration(seconds: 1));
+      try {
+        // Create user in Firebase Auth
+        final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
+        final user = credential.user;
+        if (user != null) {
+          // Save user profile in Firestore
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+            'id': user.uid, // Use Firebase Auth UID as id
+            'name': _nameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'bloodGroup': _selectedBloodGroup ?? '',
+            'phoneNumber': _phoneController.text.trim(),
+            'createdAt': DateTime.now(),
+          });
+          // Navigate to dashboard
+          if (mounted) {
+            Navigator.pushReplacementNamed(context, '/dashboard');
+          }
+        }
+      } on FirebaseAuthException catch (e) {
+        String message = 'Signup failed. Please try again.';
+        if (e.code == 'email-already-in-use') {
+          message = 'This email is already in use.';
+        } else if (e.code == 'invalid-email') {
+          message = 'Invalid email address.';
+        } else if (e.code == 'weak-password') {
+          message = 'Password is too weak.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Signup failed: $e'), backgroundColor: Colors.red),
+        );
+      }
       setState(() => _isLoading = false);
-      Navigator.pushReplacementNamed(context, '/dashboard');
     }
   }
 
@@ -59,6 +100,29 @@ class _SignupScreenState extends State<SignupScreen> {
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) => value != null && value.contains('@') ? null : 'Enter a valid email',
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _selectedBloodGroup,
+                      items: bloodGroups.map((bg) => DropdownMenuItem(value: bg, child: Text(bg))).toList(),
+                      onChanged: (val) => setState(() => _selectedBloodGroup = val),
+                      decoration: const InputDecoration(
+                        labelText: 'Blood Group',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.bloodtype),
+                      ),
+                      validator: (val) => val == null ? 'Select blood group' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _phoneController,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone Number',
+                        prefixIcon: Icon(Icons.phone),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.phone,
+                      validator: (value) => value != null && value.length >= 7 ? null : 'Enter a valid phone number',
                     ),
                     const SizedBox(height: 16),
                     TextFormField(

@@ -6,9 +6,9 @@ import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/add_request_screen.dart';
-import 'screens/request_details_screen.dart';
 import 'screens/my_requests_screen.dart';
 import 'screens/request_history_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,16 +44,29 @@ class MyApp extends StatelessWidget {
           backgroundColor: Colors.redAccent,
         ),
       ),
-      initialRoute: '/login',
       routes: {
         '/login': (context) => const LoginScreen(),
         '/signup': (context) => const SignupScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/add-request': (context) => const AddRequestScreen(),
-        '/request-details': (context) => const RequestDetailsScreen(),
         '/my-requests': (context) => const MyRequestsScreen(),
         '/request-history': (context) => const RequestHistoryScreen(),
       },
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (snapshot.hasData) {
+            return const DashboardScreen();
+          } else {
+            return const LoginScreen();
+          }
+        },
+      ),
     );
   }
 }

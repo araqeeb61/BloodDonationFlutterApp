@@ -4,7 +4,9 @@ import 'package:uuid/uuid.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AddRequestScreen extends StatefulWidget {
-  const AddRequestScreen({super.key});
+  final Map<String, dynamic>? requestData;
+  final String? requestId;
+  const AddRequestScreen({Key? key, this.requestData, this.requestId}) : super(key: key);
 
   @override
   State<AddRequestScreen> createState() => _AddRequestScreenState();
@@ -24,40 +26,107 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
 
   bool _isLoading = false;
 
+  Future<bool> _ensureUserProfileExists(User user) async {
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (!userDoc.exists) {
+      // Try to create the user profile from available info
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'email': user.email,
+        'phone': user.phoneNumber,
+        'createdAt': DateTime.now(),
+      });
+      return true;
+    }
+    return true;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.requestData != null) {
+      final data = widget.requestData!;
+      _patientNameController.text = data['patientName'] ?? '';
+      _contactController.text = data['contactNumber'] ?? '';
+      _selectedBloodGroup = data['bloodGroup'];
+      _selectedHospital = data['hospital'];
+      _selectedUrgency = data['urgency'];
+    }
+  }
+
   void _submit() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || user.email == null || user.email!.isEmpty) {
+    print('DEBUG: Current user: ${user?.toString() ?? 'null'}');
+    print('DEBUG: Current user email: ${user?.email ?? 'null'}');
+    print('DEBUG: Current user phone: ${user?.phoneNumber ?? 'null'}');
+    if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must be logged in with a valid email to create a request.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('You must be logged in to create a request.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    // Ensure user profile exists in Firestore
+    await _ensureUserProfileExists(user);
+    String? userEmail = user.email;
+    final String? userPhone = user.phoneNumber;
+    // Fetch user's name from Firestore
+    String? userName;
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (userDoc.exists && userDoc.data() != null && userDoc.data()!['name'] != null) {
+      userName = userDoc.data()!['name'];
+    }
+    // If email is not available, try to fetch from Firestore user profile
+    if (userEmail == null || userEmail.isEmpty) {
+      if (userDoc.exists && userDoc.data() != null && userDoc.data()!['email'] != null) {
+        userEmail = userDoc.data()!['email'];
+        print('DEBUG: Got user email from Firestore: ${userEmail!}');
+      }
+    }
+    if ((userEmail == null || userEmail.isEmpty) && (userPhone == null || userPhone.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No email or phone found for your account. Please contact support.'), backgroundColor: Colors.red),
       );
       return;
     }
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      final String requestId = const Uuid().v4();
+      final String requestId = widget.requestId ?? const Uuid().v4();
       final String userId = user.uid;
-      final String userEmail = user.email!;
       try {
         final now = DateTime.now();
-        await FirebaseFirestore.instance.collection('blood_requests').doc(requestId).set({
+        final data = {
           'acceptedBy': null,
           'bloodGroup': _selectedBloodGroup ?? '',
           'contactNumber': _contactController.text.trim(),
-          'createdAt': now, // Local time for immediate UI
+          'createdAt': now,
           'hospital': _selectedHospital ?? '',
           'id': requestId,
           'isActive': true,
-          'latitude': 'sd', // Replace with actual latitude if available
-          'longitude': 'we', // Replace with actual longitude if available
+          'latitude': 'sd',
+          'longitude': 'we',
           'patientName': _patientNameController.text.trim(),
           'urgency': _selectedUrgency ?? '',
           'userId': userId,
-          'userEmail': userEmail,
-        });
+        };
+        if (userEmail != null && userEmail.isNotEmpty) {
+          data['userEmail'] = userEmail;
+        }
+        if (userPhone != null && userPhone.isNotEmpty) {
+          data['userPhone'] = userPhone;
+        }
+        if (userName != null && userName.isNotEmpty) {
+          data['userName'] = userName;
+        }
+        if (widget.requestId != null) {
+          // Update existing request
+          await FirebaseFirestore.instance.collection('blood_requests').doc(widget.requestId).update(data);
+        } else {
+          // Create new request
+          await FirebaseFirestore.instance.collection('blood_requests').doc(requestId).set(data);
+        }
         setState(() => _isLoading = false);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Blood request submitted successfully!'), backgroundColor: Colors.green),
+            SnackBar(content: Text(widget.requestId != null ? 'Request updated successfully!' : 'Blood request submitted successfully!'), backgroundColor: Colors.green),
           );
           Navigator.pop(context);
         }
