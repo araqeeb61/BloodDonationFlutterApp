@@ -7,6 +7,8 @@ import 'screens/signup_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/add_request_screen.dart';
 import 'screens/request_details_screen.dart';
+import 'screens/my_requests_screen.dart';
+import 'screens/request_history_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +51,8 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreen(),
         '/add-request': (context) => const AddRequestScreen(),
         '/request-details': (context) => const RequestDetailsScreen(),
+        '/my-requests': (context) => const MyRequestsScreen(),
+        '/request-history': (context) => const RequestHistoryScreen(),
       },
     );
   }

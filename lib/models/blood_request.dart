@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class BloodRequest {
   final String id;
   final String userId;
@@ -11,6 +13,7 @@ class BloodRequest {
   final DateTime createdAt;
   final bool isActive;
   final String? acceptedBy;
+  final String? userEmail;
 
   BloodRequest({
     required this.id,
@@ -25,6 +28,7 @@ class BloodRequest {
     required this.createdAt,
     this.isActive = true,
     this.acceptedBy,
+    this.userEmail,
   });
 
   Map<String, dynamic> toJson() {
@@ -41,6 +45,7 @@ class BloodRequest {
       'createdAt': createdAt.toIso8601String(),
       'isActive': isActive,
       'acceptedBy': acceptedBy,
+      'userEmail': userEmail,
     };
   }
 
@@ -50,14 +55,17 @@ class BloodRequest {
       userId: json['userId'],
       bloodGroup: json['bloodGroup'],
       hospital: json['hospital'],
-      latitude: json['latitude'],
-      longitude: json['longitude'],
+      latitude: json['latitude'] is double ? json['latitude'] : double.tryParse(json['latitude'].toString()) ?? 0.0,
+      longitude: json['longitude'] is double ? json['longitude'] : double.tryParse(json['longitude'].toString()) ?? 0.0,
       contactNumber: json['contactNumber'],
       patientName: json['patientName'],
       urgency: json['urgency'],
-      createdAt: DateTime.parse(json['createdAt']),
+      createdAt: json['createdAt'] is DateTime
+          ? json['createdAt']
+          : (json['createdAt'] as Timestamp).toDate(),
       isActive: json['isActive'],
       acceptedBy: json['acceptedBy'],
+      userEmail: json['userEmail'],
     );
   }
 }

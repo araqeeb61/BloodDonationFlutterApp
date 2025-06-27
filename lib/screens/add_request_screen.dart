@@ -1,4 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AddRequestScreen extends StatefulWidget {
   const AddRequestScreen({super.key});
@@ -22,12 +25,50 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
   bool _isLoading = false;
 
   void _submit() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.email == null || user.email!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in with a valid email to create a request.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      // TODO: Save request to Firestore
-      await Future.delayed(const Duration(seconds: 1));
-      setState(() => _isLoading = false);
-      Navigator.pop(context);
+      final String requestId = const Uuid().v4();
+      final String userId = user.uid;
+      final String userEmail = user.email!;
+      try {
+        final now = DateTime.now();
+        await FirebaseFirestore.instance.collection('blood_requests').doc(requestId).set({
+          'acceptedBy': null,
+          'bloodGroup': _selectedBloodGroup ?? '',
+          'contactNumber': _contactController.text.trim(),
+          'createdAt': now, // Local time for immediate UI
+          'hospital': _selectedHospital ?? '',
+          'id': requestId,
+          'isActive': true,
+          'latitude': 'sd', // Replace with actual latitude if available
+          'longitude': 'we', // Replace with actual longitude if available
+          'patientName': _patientNameController.text.trim(),
+          'urgency': _selectedUrgency ?? '',
+          'userId': userId,
+          'userEmail': userEmail,
+        });
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Blood request submitted successfully!'), backgroundColor: Colors.green),
+          );
+          Navigator.pop(context);
+        }
+      } catch (e) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to submit request: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 
