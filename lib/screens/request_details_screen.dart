@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/blood_request.dart';
-import '../widgets/location_tracking_map.dart';
+import '../widgets/user_name_banner.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 class RequestDetailsScreen extends StatelessWidget {
-  final BloodRequest request;
+  final dynamic request;
 
   const RequestDetailsScreen({
     super.key,
@@ -18,11 +18,17 @@ class RequestDetailsScreen extends StatelessWidget {
     return doc.data();
   }
 
+  Future<Map<String, dynamic>?> _getHospitalLocation() async {
+    final query = await FirebaseFirestore.instance.collection('hospitals').where('name', isEqualTo: request.hospital).get();
+    if (query.docs.isNotEmpty) {
+      return query.docs.first.data();
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final isDonor = request.acceptedBy == currentUser?.uid;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Request Details'),
@@ -32,13 +38,39 @@ class RequestDetailsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Location tracking map
-            SizedBox(
-              height: 300,
-              child: LocationTrackingMap(
-                request: request,
-                isDonor: isDonor,
-              ),
+            const UserNameBanner(),
+            const SizedBox(height: 16),
+            FutureBuilder<Map<String, dynamic>?>(
+              future: _getHospitalLocation(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 300,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (!snapshot.hasData || snapshot.data == null) {
+                  return const SizedBox(
+                    height: 300,
+                    child: Center(child: Text('Hospital location not found.')),
+                  );
+                }
+                final hospitalData = snapshot.data!;
+                final mapLink = hospitalData['link'];
+                if (mapLink == null || mapLink.toString().isEmpty) {
+                  return const SizedBox(
+                    height: 300,
+                    child: Center(child: Text('No map link available for this hospital.')),
+                  );
+                }
+                return SizedBox(
+                  height: 300,
+                  child: WebView(
+                    initialUrl: mapLink,
+                    javascriptMode: JavaScriptMode.unrestricted,
+                  ),
+                );
+              },
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),

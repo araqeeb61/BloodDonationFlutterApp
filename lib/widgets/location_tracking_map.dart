@@ -9,11 +9,15 @@ import 'package:url_launcher/url_launcher.dart';
 class LocationTrackingMap extends StatefulWidget {
   final BloodRequest request;
   final bool isDonor;
+  final double? hospitalLat;
+  final double? hospitalLng;
 
   const LocationTrackingMap({
     super.key,
     required this.request,
     required this.isDonor,
+    this.hospitalLat,
+    this.hospitalLng,
   });
 
   @override
@@ -34,10 +38,12 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
 
   void _initializeMap() async {
     // Add hospital marker
+    final double lat = widget.hospitalLat ?? widget.request.latitude;
+    final double lng = widget.hospitalLng ?? widget.request.longitude;
     _markers.add(
       Marker(
         markerId: const MarkerId('hospital'),
-        position: LatLng(widget.request.latitude, widget.request.longitude),
+        position: LatLng(lat, lng),
         infoWindow: InfoWindow(title: widget.request.hospital),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       ),
@@ -110,12 +116,14 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
 
   @override
   Widget build(BuildContext context) {
+    final double lat = widget.hospitalLat ?? widget.request.latitude;
+    final double lng = widget.hospitalLng ?? widget.request.longitude;
     return Stack(
       children: [
         GoogleMap(
           mapType: MapType.normal,
           initialCameraPosition: CameraPosition(
-            target: LatLng(widget.request.latitude, widget.request.longitude),
+            target: LatLng(lat, lng),
             zoom: 15,
           ),
           markers: _markers,
@@ -131,7 +139,7 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
           child: FloatingActionButton.extended(
             onPressed: () async {
               final url = Uri.parse(
-                'https://www.google.com/maps/dir/?api=1&destination=${widget.request.latitude},${widget.request.longitude}&travelmode=driving',
+                'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving',
               );
               if (await canLaunchUrl(url)) {
                 await launchUrl(url, mode: LaunchMode.externalApplication);

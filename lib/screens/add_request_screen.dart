@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/user_name_banner.dart';
 
 class AddRequestScreen extends StatefulWidget {
   final Map<String, dynamic>? requestData;
@@ -19,12 +20,16 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
   String? _selectedBloodGroup;
   String? _selectedHospital;
   String? _selectedUrgency;
+  String? _selectedHospitalId;
 
   final List<String> bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-  final List<String> hospitals = ['City Hospital', 'General Hospital', 'Red Cross', 'Community Clinic'];
+  List<String> hospitals = [];
+  List<Map<String, dynamic>> hospitalDocs = [];
   final List<String> urgencies = ['Low', 'Medium', 'High'];
 
   bool _isLoading = false;
+  bool _hospitalsLoading = true;
+  String? _hospitalsError;
 
   Future<bool> _ensureUserProfileExists(User user) async {
     final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -43,6 +48,7 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchHospitals();
     if (widget.requestData != null) {
       final data = widget.requestData!;
       _patientNameController.text = data['patientName'] ?? '';
@@ -50,6 +56,34 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
       _selectedBloodGroup = data['bloodGroup'];
       _selectedHospital = data['hospital'];
       _selectedUrgency = data['urgency'];
+    }
+  }
+
+  Future<void> _fetchHospitals() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('hospitals').get();
+      setState(() {
+        print(snapshot.docs.length);
+        hospitalDocs = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+        hospitals = hospitalDocs
+            .where((h) => h['name'] != null && h['name'].toString().trim().isNotEmpty)
+            .map((h) => h['name'].toString())
+            .toList();
+            
+        // If only one hospital, select it by default
+        if (hospitals.isNotEmpty && _selectedHospital == null) {
+          _selectedHospital = hospitals.first;
+          _selectedHospitalId = hospitalDocs.firstWhere((h) => h['name'] == _selectedHospital)['id'];
+        }
+        _hospitalsLoading = false;
+        _hospitalsError = null;
+      });
+    } catch (e) {
+      setState(() {
+        _hospitalsLoading = false;
+        _hospitalsError = 'Failed to load hospitals: '
+            + (e is Exception ? e.toString() : 'Unknown error');
+      });
     }
   }
 
@@ -99,6 +133,7 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
           'contactNumber': _contactController.text.trim(),
           'createdAt': now,
           'hospital': _selectedHospital ?? '',
+          'hospitalId': _selectedHospitalId ?? '',
           'id': requestId,
           'isActive': true,
           'latitude': 'sd',
@@ -147,84 +182,104 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
       appBar: AppBar(title: const Text('Add Blood Request')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              DropdownButtonFormField<String>(
-                value: _selectedBloodGroup,
-                items: bloodGroups.map((bg) => DropdownMenuItem(value: bg, child: Text(bg))).toList(),
-                onChanged: (val) => setState(() => _selectedBloodGroup = val),
-                decoration: const InputDecoration(
-                  labelText: 'Blood Group',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.bloodtype),
-                ),
-                validator: (val) => val == null ? 'Select blood group' : null,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedHospital,
-                items: hospitals.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
-                onChanged: (val) => setState(() => _selectedHospital = val),
-                decoration: const InputDecoration(
-                  labelText: 'Hospital',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.local_hospital),
-                ),
-                validator: (val) => val == null ? 'Select hospital' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _patientNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Patient Name',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
-                ),
-                validator: (val) => val != null && val.isNotEmpty ? null : 'Enter patient name',
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedUrgency,
-                items: urgencies.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                onChanged: (val) => setState(() => _selectedUrgency = val),
-                decoration: const InputDecoration(
-                  labelText: 'Urgency',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.priority_high),
-                ),
-                validator: (val) => val == null ? 'Select urgency' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _contactController,
-                decoration: const InputDecoration(
-                  labelText: 'Contact Number',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.phone),
-                ),
-                keyboardType: TextInputType.phone,
-                validator: (val) => val != null && val.length >= 10 ? null : 'Enter valid contact number',
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const UserNameBanner(),
+            const SizedBox(height: 16),
+            Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _selectedBloodGroup,
+                    items: bloodGroups.map((bg) => DropdownMenuItem(value: bg, child: Text(bg))).toList(),
+                    onChanged: (val) => setState(() => _selectedBloodGroup = val),
+                    decoration: const InputDecoration(
+                      labelText: 'Blood Group',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.bloodtype),
+                    ),
+                    validator: (val) => val == null ? 'Select blood group' : null,
                   ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Submit Request', style: TextStyle(fontSize: 18, color: Colors.white)),
-                ),
+                  const SizedBox(height: 16),
+                  _hospitalsLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _hospitalsError != null
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Text(_hospitalsError!, style: const TextStyle(color: Colors.red)),
+                            )
+                          : DropdownButtonFormField<String>(
+                              value: _selectedHospital,
+                              items: hospitals.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedHospital = val;
+                                  final found = hospitalDocs.firstWhere((h) => h['name'] == val, orElse: () => {});
+                                  _selectedHospitalId = found['id'] ?? null;
+                                });
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Hospital',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.local_hospital),
+                              ),
+                              validator: (val) => val == null ? 'Select hospital' : null,
+                            ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _patientNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Patient Name',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                    validator: (val) => val != null && val.isNotEmpty ? null : 'Enter patient name',
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: _selectedUrgency,
+                    items: urgencies.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                    onChanged: (val) => setState(() => _selectedUrgency = val),
+                    decoration: const InputDecoration(
+                      labelText: 'Urgency',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.priority_high),
+                    ),
+                    validator: (val) => val == null ? 'Select urgency' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _contactController,
+                    decoration: const InputDecoration(
+                      labelText: 'Contact Number',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.phone),
+                    ),
+                    keyboardType: TextInputType.phone,
+                    validator: (val) => val != null && val.length >= 10 ? null : 'Enter valid contact number',
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text('Submit Request', style: TextStyle(fontSize: 18, color: Colors.white)),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
