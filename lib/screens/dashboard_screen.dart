@@ -5,7 +5,6 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../models/blood_request.dart';
 import 'request_details_screen.dart';
 import '../widgets/user_name_banner.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -216,26 +215,37 @@ class DashboardScreen extends StatelessWidget {
                                               );
                                               return;
                                             }
-                                            final hospitalData = query.docs.first.data();
-                                            final link = hospitalData['link'];
-                                            if (link == null || link.toString().isEmpty) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('No map link available for this hospital.'), backgroundColor: Colors.red),
-                                              );
-                                              return;
-                                            }
-                                            final url = Uri.parse(link);
-                                            if (await canLaunchUrl(url)) {
-                                              await launchUrl(url, mode: LaunchMode.externalApplication);
-                                            } else {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Could not open map link'), backgroundColor: Colors.red),
-                                              );
-                                            }
+                                            // Instead of using link, just navigate to details page
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) => RequestDetailsScreen(
+                                                  request: BloodRequest.fromJson({
+                                                    ...updatedReq.map((k, v) {
+                                                      if ({
+                                                        'id',
+                                                        'userId',
+                                                        'bloodGroup',
+                                                        'hospital',
+                                                        'contactNumber',
+                                                        'patientName',
+                                                        'urgency',
+                                                        'userEmail',
+                                                        'acceptedBy',
+                                                      }.contains(k) && v != null && v is! String) {
+                                                        return MapEntry(k, v.toString());
+                                                      }
+                                                      return MapEntry(k, v);
+                                                    }),
+                                                    'id': docId,
+                                                  }),
+                                                ),
+                                              ),
+                                            );
                                           }
                                         } catch (e) {
                                           ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text('Error: [1m${e.toString()}[22m'), backgroundColor: Colors.redAccent),
+                                            SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.redAccent),
                                           );
                                         }
                                       },

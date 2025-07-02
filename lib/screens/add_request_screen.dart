@@ -127,6 +127,21 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
       final String userId = user.uid;
       try {
         final now = DateTime.now();
+        // Fetch hospital coordinates from hospitalDocs
+        double latitude = 0.0;
+        double longitude = 0.0;
+        if (_selectedHospital != null) {
+          final hospital = hospitalDocs.firstWhere(
+            (h) => h['name'] == _selectedHospital,
+            orElse: () => {},
+          );
+          latitude = (hospital['latitude'] is num)
+              ? hospital['latitude'].toDouble()
+              : double.tryParse(hospital['latitude']?.toString() ?? '') ?? 0.0;
+          longitude = (hospital['longitude'] is num)
+              ? hospital['longitude'].toDouble()
+              : double.tryParse(hospital['longitude']?.toString() ?? '') ?? 0.0;
+        }
         final data = {
           'acceptedBy': null,
           'bloodGroup': _selectedBloodGroup ?? '',
@@ -136,8 +151,8 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
           'hospitalId': _selectedHospitalId ?? '',
           'id': requestId,
           'isActive': true,
-          'latitude': 'sd',
-          'longitude': 'we',
+          'latitude': latitude,
+          'longitude': longitude,
           'patientName': _patientNameController.text.trim(),
           'urgency': _selectedUrgency ?? '',
           'userId': userId,

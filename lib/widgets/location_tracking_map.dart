@@ -1,160 +1,233 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
-import '../services/location_service.dart';
+import 'dart:async';
 import '../models/blood_request.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
+import 'directions_page.dart';
+import 'custom_map_icons.dart';
 
 class LocationTrackingMap extends StatefulWidget {
   final BloodRequest request;
   final bool isDonor;
-  final double? hospitalLat;
-  final double? hospitalLng;
+  final double hospitalLat;
+  final double hospitalLng;
+  final String? apiKey;
 
   const LocationTrackingMap({
-    super.key,
+    Key? key,
     required this.request,
     required this.isDonor,
-    this.hospitalLat,
-    this.hospitalLng,
-  });
+    required this.hospitalLat,
+    required this.hospitalLng,
+    this.apiKey,
+  }) : super(key: key);
 
   @override
   State<LocationTrackingMap> createState() => _LocationTrackingMapState();
 }
 
 class _LocationTrackingMapState extends State<LocationTrackingMap> {
-  final Completer<GoogleMapController> _controller = Completer();
+  GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
-  final LocationService _locationService = LocationService();
-  StreamSubscription<Position?>? _locationSubscription;
+  bool _mapReady = false;
+  bool _hasError = false;
+  String _errorMessage = '';
+  Position? _currentPosition;
+  final Completer<GoogleMapController> _controller =
+      Completer<GoogleMapController>();
 
   @override
   void initState() {
     super.initState();
-    _initializeMap();
-  }
-
-  void _initializeMap() async {
-    // Add hospital marker
-    final double lat = widget.hospitalLat ?? widget.request.latitude;
-    final double lng = widget.hospitalLng ?? widget.request.longitude;
-    _markers.add(
-      Marker(
-        markerId: const MarkerId('hospital'),
-        position: LatLng(lat, lng),
-        infoWindow: InfoWindow(title: widget.request.hospital),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-      ),
-    );
-
-    if (widget.isDonor) {
-      // Start tracking donor's location
-      await _locationService.startTracking(widget.request.id);
-    } else {
-      // Listen to donor's location updates
-      _locationSubscription = _locationService
-          .getLocationUpdates(widget.request.id)
-          .listen((position) {
-        if (position != null && mounted) {
-          _updateDonorMarker(position);
-          _animateToPosition(position);
-        }
-      });
-    }
-
-    setState(() {});
-  }
-
-  void _updateDonorMarker(Position position) {
-    setState(() {
-      _markers.removeWhere(
-          (marker) => marker.markerId == const MarkerId('donor'));
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('donor'),
-          position: LatLng(position.latitude, position.longitude),
-          infoWindow: const InfoWindow(title: 'Donor Location'),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-        ),
-      );
+    CustomMapIcons.loadIcons().then((_) {
+      _determinePosition();
+      try {
+        _initializeMap();
+      } catch (e) {
+        print('Error initializing map: $e');
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+        });
+      }
     });
   }
 
-  Future<void> _animateToPosition(Position position) async {
-    final controller = await _controller.future;
-    final bounds = LatLngBounds(
-      southwest: LatLng(
-        position.latitude < widget.request.latitude
-            ? position.latitude
-            : widget.request.latitude,
-        position.longitude < widget.request.longitude
-            ? position.longitude
-            : widget.request.longitude,
-      ),
-      northeast: LatLng(
-        position.latitude > widget.request.latitude
-            ? position.latitude
-            : widget.request.latitude,
-        position.longitude > widget.request.longitude
-            ? position.longitude
-            : widget.request.longitude,
-      ),
-    );
-    controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 100));
+  Future<void> _determinePosition() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Location services are disabled.';
+        });
+        return;
+      }
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _hasError = true;
+            _errorMessage = 'Location permissions are denied.';
+          });
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Location permissions are permanently denied.';
+        });
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition();
+      setState(() {
+        _currentPosition = position;
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('donor'),
+            position: LatLng(position.latitude, position.longitude),
+            infoWindow: const InfoWindow(title: 'Your Location'),
+            icon: CustomMapIcons.personIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          ),
+        );
+      });
+    } catch (e) {
+      print('Error getting current location: $e');
+    }
   }
 
-  @override
-  void dispose() {
-    if (widget.isDonor) {
-      _locationService.stopTracking();
+  void _initializeMap() {
+    // Validate coordinates
+    if (widget.hospitalLat.isNaN || widget.hospitalLng.isNaN) {
+      throw Exception('Invalid coordinates: NaN values detected');
     }
-    _locationSubscription?.cancel();
-    super.dispose();
+    // Add hospital marker
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('hospital'),
+        position: LatLng(widget.hospitalLat, widget.hospitalLng),
+        infoWindow: InfoWindow(
+          title: 'Hospital',
+          snippet: widget.request.hospital,
+        ),
+        icon: CustomMapIcons.bloodIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ),
+    );
+  }
+
+  void _openDirections() async {
+    final double destLat = widget.hospitalLat;
+    final double destLng = widget.hospitalLng;
+    double? startLat = _currentPosition?.latitude;
+    double? startLng = _currentPosition?.longitude;
+    if (startLat != null && startLng != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => DirectionsPage(
+            start: LatLng(startLat, startLng),
+            end: LatLng(destLat, destLng),
+            hospitalName: widget.request.hospital,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Current location not available.')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final double lat = widget.hospitalLat ?? widget.request.latitude;
-    final double lng = widget.hospitalLng ?? widget.request.longitude;
-    return Stack(
-      children: [
-        GoogleMap(
-          mapType: MapType.normal,
-          initialCameraPosition: CameraPosition(
-            target: LatLng(lat, lng),
-            zoom: 15,
-          ),
-          markers: _markers,
-          onMapCreated: (GoogleMapController controller) {
-            _controller.complete(controller);
-          },
-          myLocationEnabled: true,
-          myLocationButtonEnabled: true,
+    // If there was an error during initialization, show an error message
+    if (_hasError) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, color: Colors.red, size: 48),
+            const SizedBox(height: 16),
+            Text('Error loading map: $_errorMessage'),
+          ],
         ),
-        Positioned(
-          bottom: 16,
-          right: 16,
-          child: FloatingActionButton.extended(
-            onPressed: () async {
-              final url = Uri.parse(
-                'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving',
-              );
-              if (await canLaunchUrl(url)) {
-                await launchUrl(url, mode: LaunchMode.externalApplication);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Could not open Google Maps'), backgroundColor: Colors.red),
-                );
+      );
+    }
+
+    // If we have an API key provided, we'll use it for initialization
+    if (widget.apiKey != null) {
+      // This would normally happen in AndroidManifest.xml or AppDelegate.swift
+      // We're handling it in the widget as a workaround
+      print('Using provided API key for maps: ${widget.apiKey}');
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: LatLng(widget.hospitalLat, widget.hospitalLng),
+              zoom: 14.0,
+            ),
+            markers: _markers,
+            mapType: MapType.normal,
+            myLocationEnabled: true,
+            myLocationButtonEnabled: true,
+            compassEnabled: true,
+            zoomControlsEnabled: true,
+            onMapCreated: (GoogleMapController controller) {
+              if (!_controller.isCompleted) {
+                _controller.complete(controller);
+                _mapController = controller;
+                setState(() {
+                  _mapReady = true;
+                });
               }
             },
-            icon: const Icon(Icons.directions),
-            label: const Text('Directions'),
-            backgroundColor: Colors.redAccent,
           ),
-        ),
-      ],
+          if (!_mapReady)
+            Container(
+              color: Colors.white.withOpacity(0.7),
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Loading map...'),
+                  ],
+                ),
+              ),
+            ),
+          Positioned(
+            bottom: 24,
+            left: 24,
+            child: ElevatedButton.icon(
+              onPressed: _openDirections,
+              icon: const Icon(Icons.directions, color: Colors.white),
+              label: const Text('Directions', style: TextStyle(fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple, // Match app theme
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 6,
+                shadowColor: Colors.black45,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
   }
 }
