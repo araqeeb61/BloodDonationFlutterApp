@@ -4,7 +4,6 @@ import 'dart:async';
 import '../models/blood_request.dart';
 import 'package:geolocator/geolocator.dart';
 import 'directions_page.dart';
-import 'custom_map_icons.dart';
 
 class LocationTrackingMap extends StatefulWidget {
   final BloodRequest request;
@@ -39,18 +38,16 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
   @override
   void initState() {
     super.initState();
-    CustomMapIcons.loadIcons().then((_) {
-      _determinePosition();
-      try {
-        _initializeMap();
-      } catch (e) {
-        print('Error initializing map: $e');
-        setState(() {
-          _hasError = true;
-          _errorMessage = e.toString();
-        });
-      }
-    });
+    _determinePosition();
+    try {
+      _initializeMap();
+    } catch (e) {
+      print('Error initializing map: $e');
+      setState(() {
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
+    }
   }
 
   Future<void> _determinePosition() async {
@@ -89,7 +86,7 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
             markerId: const MarkerId('donor'),
             position: LatLng(position.latitude, position.longitude),
             infoWindow: const InfoWindow(title: 'Your Location'),
-            icon: CustomMapIcons.personIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+            icon: BitmapDescriptor.defaultMarkerWithHue(200), // Sky blue dot
           ),
         );
       });
@@ -112,7 +109,7 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
           title: 'Hospital',
           snippet: widget.request.hospital,
         ),
-        icon: CustomMapIcons.bloodIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        icon: BitmapDescriptor.defaultMarkerWithHue(0), // Dark red (error) icon
       ),
     );
   }
@@ -207,16 +204,20 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
             child: ElevatedButton.icon(
               onPressed: _openDirections,
               icon: const Icon(Icons.directions, color: Colors.white),
-              label: const Text('Directions', style: TextStyle(fontWeight: FontWeight.bold)),
+              label: const Text('Directions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple, // Match app theme
+                backgroundColor: Colors.red.shade700, // Use a strong red color
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                 ),
-                elevation: 6,
-                shadowColor: Colors.black45,
+                elevation: 10,
+                shadowColor: Colors.redAccent.withOpacity(0.4),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                ),
               ),
             ),
           ),
