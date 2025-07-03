@@ -14,13 +14,13 @@ class LocationTrackingMap extends StatefulWidget {
   final String? apiKey;
 
   const LocationTrackingMap({
-    Key? key,
+    super.key,
     required this.request,
     required this.isDonor,
     required this.hospitalLat,
     required this.hospitalLng,
     this.apiKey,
-  }) : super(key: key);
+  });
 
   @override
   State<LocationTrackingMap> createState() => _LocationTrackingMapState();

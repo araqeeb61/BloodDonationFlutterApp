@@ -6,17 +6,13 @@ class CustomMapIcons {
   static BitmapDescriptor? bloodIcon;
 
   static Future<void> loadIcons() async {
-    if (personIcon == null) {
-      personIcon = await BitmapDescriptor.fromAssetImage(
+    personIcon ??= await BitmapDescriptor.fromAssetImage(
         const ImageConfiguration(size: Size(48, 48)),
         'assets/images/person_marker.png',
       );
-    }
-    if (bloodIcon == null) {
-      bloodIcon = await BitmapDescriptor.fromAssetImage(
+    bloodIcon ??= await BitmapDescriptor.fromAssetImage(
         const ImageConfiguration(size: Size(48, 48)),
         'assets/images/blood_marker.png',
       );
-    }
   }
 }

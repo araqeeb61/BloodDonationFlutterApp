@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
 import '../widgets/user_name_banner.dart';
 import '../widgets/location_tracking_map.dart';
+import '../widgets/directions_page.dart';
 import '../models/blood_request.dart';
 
-class RequestDetailsScreen extends StatelessWidget {
+class RequestDetailsScreen extends StatefulWidget {
   final BloodRequest request;
 
   RequestDetailsScreen({super.key, required dynamic request})
@@ -13,13 +18,22 @@ class RequestDetailsScreen extends StatelessWidget {
           ? request
           : BloodRequest.fromJson(request as Map<String, dynamic>);
 
+  @override
+  State<RequestDetailsScreen> createState() => _RequestDetailsScreenState();
+}
+
+class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
+  // Store the last parsed hospital coordinates for use in Accept
+  double? _lastHospitalLat;
+  double? _lastHospitalLng;
+
   Future<Map<String, dynamic>?> _getAcceptorDetails() async {
     try {
-      print('Fetching acceptor details for: ${request.acceptedBy}');
-      if (request.acceptedBy == null) return null;
+      print('Fetching acceptor details for: ${widget.request.acceptedBy}');
+      if (widget.request.acceptedBy == null) return null;
       final doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(request.acceptedBy)
+          .doc(widget.request.acceptedBy)
           .get();
       print('Acceptor doc data: ${doc.data()}');
       return doc.data();
@@ -29,55 +43,37 @@ class RequestDetailsScreen extends StatelessWidget {
     }
   }
 
-  Future<Map<String, dynamic>?> _getHospitalLocation() async {
-    try {
-      print(
-        'Fetching hospital location for: "${request.hospital}" (length: ${request.hospital.length})',
-      );
-      // Trim the hospital name to remove any trailing spaces
-      final trimmedHospitalName = request.hospital.trim();
-      print('Trimmed hospital name: "$trimmedHospitalName"');
-
-      // Try exact match first
-      var query = await FirebaseFirestore.instance
-          .collection('hospitals')
-          .where('name', isEqualTo: trimmedHospitalName)
-          .limit(1)
-          .get();
-
-      if (query.docs.isEmpty) {
-        print('No exact match found, trying case-insensitive match');
-        // Try case-insensitive match by fetching all hospitals and filtering
-        query = await FirebaseFirestore.instance.collection('hospitals').get();
-
-        // Try to find a matching hospital with more flexible matching
-        final matchingDoc = query.docs.firstWhere((doc) {
-          final hospitalName = doc['name']?.toString() ?? '';
-          return hospitalName.toLowerCase().contains(
-                trimmedHospitalName.toLowerCase(),
-              ) ||
-              trimmedHospitalName.toLowerCase().contains(
-                hospitalName.toLowerCase(),
-              );
-        }, orElse: () => throw Exception('No matching hospital found'));
-        print('Case-insensitive match found: ${matchingDoc.data()}');
-        return matchingDoc.data();
+  // OpenCage Geocoding function
+  Future<Map<String, double>?> _getLatLngFromOpenCage(String address) async {
+    const apiKey = 'cde135fa80d34bd88150202958706a7d';
+    final url = Uri.parse(
+      'https://api.opencagedata.com/geocode/v1/json?q=${Uri.encodeComponent(address)}&key=$apiKey',
+    );
+    final response = await http.get(url);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['results'] != null && data['results'].isNotEmpty) {
+        final geometry = data['results'][0]['geometry'];
+        return {
+          'lat': (geometry['lat'] as num).toDouble(),
+          'lng': (geometry['lng'] as num).toDouble(),
+        };
       }
-
-      final data = query.docs.first.data();
-      print('Hospital doc data: $data');
-      return data;
-    } catch (e) {
-      print('Error fetching hospital location: ${e.toString()}');
-      return null;
     }
+    return null;
+  }
+
+  Future<Map<String, double>?> _getHospitalCoordinates() async {
+    final hospitalName = widget.request.hospital.trim();
+    if (hospitalName.isEmpty) return null;
+    return await _getLatLngFromOpenCage(hospitalName);
   }
 
   @override
   Widget build(BuildContext context) {
-    print('Building RequestDetailsScreen for request: ${request.id}');
+    print('Building RequestDetailsScreen for request: ${widget.request.id}');
     final currentUser = FirebaseAuth.instance.currentUser;
-    final isDonor = request.acceptedBy == currentUser?.uid;
+    final isDonor = widget.request.acceptedBy == currentUser?.uid;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Request Details'),
@@ -89,10 +85,10 @@ class RequestDetailsScreen extends StatelessWidget {
           children: [
             const UserNameBanner(),
             const SizedBox(height: 16),
-            FutureBuilder<Map<String, dynamic>?>(
-              future: _getHospitalLocation(),
+            // Use OpenCage API to get hospital coordinates
+            FutureBuilder<Map<String, double>?>(
+              future: _getHospitalCoordinates(),
               builder: (context, snapshot) {
-                print('Hospital FutureBuilder snapshot: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, error: ${snapshot.error}');
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const SizedBox(
                     height: 300,
@@ -100,80 +96,68 @@ class RequestDetailsScreen extends StatelessWidget {
                   );
                 }
                 if (snapshot.hasError) {
-                  print('Snapshot error: ${snapshot.error}');
                   return const SizedBox(
                     height: 300,
                     child: Center(child: Text('Error loading hospital location.')),
                   );
                 }
                 if (!snapshot.hasData || snapshot.data == null) {
-                  print('Hospital location not found in builder');
                   return const SizedBox(
                     height: 300,
                     child: Center(child: Text('Hospital location not found.')),
                   );
                 }
-                final hospitalData = snapshot.data!;
-                print('Hospital data: $hospitalData');
-
-                // Robust extraction of latitude and longitude from possible Firestore structures
-                var lat = hospitalData['latitude'] ?? hospitalData['lat'];
-                var lng = hospitalData['longitude'] ?? hospitalData['lng'];
-                if ((lat == null || lng == null) && hospitalData['location'] is Map) {
-                  final loc = hospitalData['location'];
-                  lat = loc['latitude'] ?? loc['lat'];
-                  lng = loc['longitude'] ?? loc['lng'];
-                }
-                print('Raw latitude: $lat (${lat?.runtimeType})');
-                print('Raw longitude: $lng (${lng?.runtimeType})');
-
-                // Parse coordinates with robust handling
-                double? latitude;
-                double? longitude;
-                try {
-                  latitude = lat is double
-                      ? lat
-                      : lat is int
-                          ? lat.toDouble()
-                          : lat is String
-                              ? double.tryParse(lat)
-                              : null;
-                  longitude = lng is double
-                      ? lng
-                      : lng is int
-                          ? lng.toDouble()
-                          : lng is String
-                              ? double.tryParse(lng)
-                              : null;
-                  // Fallback to dummy values if parsing fails
-                  latitude ??= 24.8607; // Dummy latitude (e.g., Karachi)
-                  longitude ??= 67.0011; // Dummy longitude (e.g., Karachi)
-                } catch (e) {
-                  print('Error parsing coordinates: $e');
-                  latitude = 24.8607;
-                  longitude = 67.0011;
-                }
-
-                print('Parsed coordinates: lat=$latitude, lng=$longitude');
-
-                // Validate coordinates
-                if (latitude == null || longitude == null || latitude == 0.0 || longitude == 0.0) {
-                  print('Invalid or missing hospital coordinates');
+                final coords = snapshot.data!;
+                final latitude = coords['lat'] ?? 24.8607;
+                final longitude = coords['lng'] ?? 67.0011;
+                _lastHospitalLat = latitude;
+                _lastHospitalLng = longitude;
+                if (latitude == 0.0 || longitude == 0.0) {
                   return const SizedBox(
                     height: 300,
                     child: Center(child: Text('Invalid or missing hospital coordinates.')),
                   );
                 }
-
-                // Show map using LocationTrackingMap widget for all platforms
-                return SizedBox(
-                  height: 300,
-                  child: LocationTrackingMap(
-                    request: request,
-                    isDonor: isDonor,
-                    hospitalLat: latitude,
-                    hospitalLng: longitude,
-                  ),
+                return Column(
+                  children: [
+                    SizedBox(
+                      height: 300,
+                      child: LocationTrackingMap(
+                        request: widget.request,
+                        isDonor: isDonor,
+                        hospitalLat: latitude,
+                        hospitalLng: longitude,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => _acceptAndStartJourney(context),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: const Text('Accept', style: TextStyle(color: Colors.white)),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => _ignoreRequest(context),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: const Text('Ignore', style: TextStyle(color: Colors.white)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -190,20 +174,20 @@ class RequestDetailsScreen extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 16),
-                      _detailRow('Blood Group', request.bloodGroup),
-                      _detailRow('Hospital', request.hospital),
-                      _detailRow('Patient Name', request.patientName),
-                      _detailRow('Urgency', request.urgency),
-                      _detailRow('Contact', request.contactNumber),
+                      _detailRow('Blood Group', widget.request.bloodGroup),
+                      _detailRow('Hospital', widget.request.hospital),
+                      _detailRow('Patient Name', widget.request.patientName),
+                      _detailRow('Urgency', widget.request.urgency),
+                      _detailRow('Contact', widget.request.contactNumber),
                       _detailRow(
                         'Status',
-                        request.isActive ? 'Active' : 'Closed',
+                        widget.request.isActive ? 'Active' : 'Closed',
                       ),
                       _detailRow(
                         'Created At',
                         (() {
                           try {
-                            final val = request.createdAt;
+                            final val = widget.request.createdAt;
                             print(
                               'CreatedAt value: ${val.runtimeType} = ${val.toString()}',
                             );
@@ -216,7 +200,7 @@ class RequestDetailsScreen extends StatelessWidget {
                           }
                         })(),
                       ),
-                      if (request.acceptedBy != null)
+                      if (widget.request.acceptedBy != null)
                         FutureBuilder<Map<String, dynamic>?>(
                           future: _getAcceptorDetails(),
                           builder: (context, snapshot) {
@@ -261,17 +245,6 @@ class RequestDetailsScreen extends StatelessWidget {
                 ),
               ),
             ),
-            if (request.isActive &&
-                request.acceptedBy == null &&
-                currentUser != null &&
-                request.userId != currentUser.uid)
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ElevatedButton(
-                  onPressed: () => _acceptRequest(context),
-                  child: const Text('Accept Request'),
-                ),
-              ),
           ],
         ),
       ),
@@ -297,13 +270,12 @@ class RequestDetailsScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _acceptRequest(BuildContext context) async {
+  Future<void> _acceptAndStartJourney(BuildContext context) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
         throw Exception('You must be logged in to accept requests');
       }
-
       // Show loading indicator
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -313,28 +285,25 @@ class RequestDetailsScreen extends StatelessWidget {
           ),
         );
       }
-
       await FirebaseFirestore.instance
           .collection('blood_requests')
-          .doc(request.id)
+          .doc(widget.request.id)
           .update({
             'acceptedBy': currentUser.uid,
-            'isActive': true, // Ensure it's still active
+            'isActive': true,
           });
-
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request accepted successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Refresh the page to show updated status
+        // Navigate to directions page with journey details
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => RequestDetailsScreen(request: request),
+            builder: (context) => DirectionsPage(
+              start: LatLng(0, 0), // Placeholder, DirectionsPage should use live user location if (0,0)
+              end: _lastHospitalLat != null && _lastHospitalLng != null
+                  ? LatLng(_lastHospitalLat!, _lastHospitalLng!)
+                  : const LatLng(24.8607, 67.0011),
+              hospitalName: widget.request.hospital,
+            ),
           ),
         );
       }
@@ -342,11 +311,26 @@ class RequestDetailsScreen extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error accepting request: ${e.toString()}'),
+            content: Text('Error accepting request: \\${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
       }
+    }
+  }
+
+  Future<void> _ignoreRequest(BuildContext context) async {
+    // Hide the request for 5 minutes (locally)
+    // You can use shared_preferences for persistence if needed
+    // For demo, just pop the page
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Request ignored for 5 minutes.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      Navigator.pop(context);
     }
   }
 }

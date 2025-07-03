@@ -2,9 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import '../models/blood_request.dart';
-import 'request_details_screen.dart';
 import '../widgets/user_name_banner.dart';
+import '../widgets/directions_page.dart';
+import 'request_details_screen.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'request_details_screen.dart';
+import '../models/blood_request.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -206,51 +211,99 @@ class DashboardScreen extends StatelessWidget {
                                           });
                                           final updatedDoc = await FirebaseFirestore.instance.collection('blood_requests').doc(docId).get();
                                           final updatedReq = updatedDoc.data();
+                                          double? hospitalLat;
+                                          double? hospitalLng;
                                           if (updatedReq != null) {
                                             // Fetch hospital by name
                                             final query = await FirebaseFirestore.instance.collection('hospitals').where('name', isEqualTo: updatedReq['hospital']).get();
-                                            if (query.docs.isEmpty) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Hospital not found.'), backgroundColor: Colors.red),
-                                              );
-                                              return;
+                                            Map<String, dynamic>? hospitalData;
+                                            if (query.docs.isNotEmpty) {
+                                              hospitalData = query.docs.first.data();
                                             }
-                                            // Instead of using link, just navigate to details page
+                                            var lat = hospitalData?['latitude'] ?? hospitalData?['lat'];
+                                            var lng = hospitalData?['longitude'] ?? hospitalData?['lng'];
+                                            if ((lat == null || lng == null) && hospitalData?['location'] is Map) {
+                                              final loc = hospitalData!['location'];
+                                              lat = loc['latitude'] ?? loc['lat'];
+                                              lng = loc['longitude'] ?? loc['lng'];
+                                            }
+                                            try {
+                                              hospitalLat = lat is double
+                                                  ? lat
+                                                  : lat is int
+                                                      ? lat.toDouble()
+                                                      : lat is String
+                                                          ? double.tryParse(lat)
+                                                          : null;
+                                              hospitalLng = lng is double
+                                                  ? lng
+                                                  : lng is int
+                                                      ? lng.toDouble()
+                                                      : lng is String
+                                                          ? double.tryParse(lng)
+                                                          : null;
+                                            } catch (e) {
+                                              hospitalLat = null;
+                                              hospitalLng = null;
+                                            }
+                                            // Jump directly to journey (DirectionsPage)
                                             Navigator.push(
                                               context,
                                               MaterialPageRoute(
-                                                builder: (context) => RequestDetailsScreen(
-                                                  request: BloodRequest.fromJson({
-                                                    ...updatedReq.map((k, v) {
-                                                      if ({
-                                                        'id',
-                                                        'userId',
-                                                        'bloodGroup',
-                                                        'hospital',
-                                                        'contactNumber',
-                                                        'patientName',
-                                                        'urgency',
-                                                        'userEmail',
-                                                        'acceptedBy',
-                                                      }.contains(k) && v != null && v is! String) {
-                                                        return MapEntry(k, v.toString());
-                                                      }
-                                                      return MapEntry(k, v);
-                                                    }),
-                                                    'id': docId,
-                                                  }),
+                                                builder: (context) => DirectionsPage(
+                                                  start: const LatLng(0, 0), // Let DirectionsPage handle live user location
+                                                  end: LatLng(
+                                                    hospitalLat ?? 24.8607,
+                                                    hospitalLng ?? 67.0011,
+                                                  ),
+                                                  hospitalName: updatedReq['hospital'] ?? '',
                                                 ),
                                               ),
                                             );
                                           }
                                         } catch (e) {
                                           ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.redAccent),
+                                            SnackBar(content: Text('Error: \\${e.toString()}'), backgroundColor: Colors.redAccent),
                                           );
                                         }
                                       },
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.redAccent,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      child: const Text('Accept', style: TextStyle(color: Colors.white)),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Request ignored for 5 minutes.'), backgroundColor: Colors.orange),
+                                        );
+                                        // Optionally, hide the card or mark as ignored in local storage
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.grey,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      child: const Text('Ignore', style: TextStyle(color: Colors.white)),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => RequestDetailsScreen(
+                                              request: BloodRequest.fromJson({
+                                                ...req,
+                                                'id': docId,
+                                              }),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue,
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                       ),
                                       child: const Text('View', style: TextStyle(color: Colors.white)),

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/user_name_banner.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class AddRequestScreen extends StatefulWidget {
   final Map<String, dynamic>? requestData;
@@ -17,6 +19,7 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _patientNameController = TextEditingController();
   final TextEditingController _contactController = TextEditingController();
+  final TextEditingController _hospitalSearchController = TextEditingController();
   String? _selectedBloodGroup;
   String? _selectedHospital;
   String? _selectedUrgency;
@@ -29,7 +32,9 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
 
   bool _isLoading = false;
   bool _hospitalsLoading = true;
+  bool _isSearchingHospitals = false;
   String? _hospitalsError;
+  List<String> _hospitalSuggestions = [];
 
   Future<bool> _ensureUserProfileExists(User user) async {
     final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -86,6 +91,57 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
     }
   }
 
+  Future<void> _searchHospitals(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _hospitalSuggestions = [];
+        _isSearchingHospitals = false;
+      });
+      return;
+    }
+    setState(() {
+      _isSearchingHospitals = true;
+    });
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('hospitals')
+          .get();
+      final lowerQuery = query.toLowerCase();
+      setState(() {
+        _hospitalSuggestions = snapshot.docs
+            .map((doc) => doc['name'].toString())
+            .where((name) => name.toLowerCase().contains(lowerQuery))
+            .toList();
+        _isSearchingHospitals = false;
+      });
+    } catch (e) {
+      setState(() {
+        _hospitalSuggestions = [];
+        _isSearchingHospitals = false;
+      });
+    }
+  }
+
+  // OpenCage Geocoding function
+  Future<Map<String, double>?> _getLatLngFromOpenCage(String address) async {
+    const apiKey = 'cde135fa80d34bd88150202958706a7d';
+    final url = Uri.parse(
+      'https://api.opencagedata.com/geocode/v1/json?q=${Uri.encodeComponent(address)}&key=$apiKey',
+    );
+    final response = await http.get(url);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['results'] != null && data['results'].isNotEmpty) {
+        final geometry = data['results'][0]['geometry'];
+        return {
+          'lat': (geometry['lat'] as num).toDouble(),
+          'lng': (geometry['lng'] as num).toDouble(),
+        };
+      }
+    }
+    return null;
+  }
+
   void _submit() async {
     final user = FirebaseAuth.instance.currentUser;
     print('DEBUG: Current user: ${user?.toString() ?? 'null'}');
@@ -126,20 +182,14 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
       final String userId = user.uid;
       try {
         final now = DateTime.now();
-        // Fetch hospital coordinates from hospitalDocs
         double latitude = 0.0;
         double longitude = 0.0;
-        if (_selectedHospital != null) {
-          final hospital = hospitalDocs.firstWhere(
-            (h) => h['name'] == _selectedHospital,
-            orElse: () => {},
-          );
-          latitude = (hospital['latitude'] is num)
-              ? hospital['latitude'].toDouble()
-              : double.tryParse(hospital['latitude']?.toString() ?? '') ?? 0.0;
-          longitude = (hospital['longitude'] is num)
-              ? hospital['longitude'].toDouble()
-              : double.tryParse(hospital['longitude']?.toString() ?? '') ?? 0.0;
+        if (_selectedHospital != null && _selectedHospital!.isNotEmpty) {
+          final coords = await _getLatLngFromOpenCage(_selectedHospital!);
+          if (coords != null) {
+            latitude = coords['lat']!;
+            longitude = coords['lng']!;
+          }
         }
         final data = {
           'acceptedBy': null,
@@ -218,30 +268,48 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
                     validator: (val) => val == null ? 'Select blood group' : null,
                   ),
                   const SizedBox(height: 16),
-                  _hospitalsLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _hospitalsError != null
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8.0),
-                              child: Text(_hospitalsError!, style: const TextStyle(color: Colors.red)),
-                            )
-                          : DropdownButtonFormField<String>(
-                              value: _selectedHospital,
-                              items: hospitals.map((h) => DropdownMenuItem(value: h, child: Text(h))).toList(),
-                              onChanged: (val) {
-                                setState(() {
-                                  _selectedHospital = val;
-                                  final found = hospitalDocs.firstWhere((h) => h['name'] == val, orElse: () => {});
-                                  _selectedHospitalId = found['id'];
-                                });
-                              },
-                              decoration: const InputDecoration(
-                                labelText: 'Hospital',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.local_hospital),
-                              ),
-                              validator: (val) => val == null ? 'Select hospital' : null,
-                            ),
+                  // Replace DropdownButtonFormField for hospital with search field
+                  TextFormField(
+                    controller: _hospitalSearchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Hospital',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.local_hospital),
+                    ),
+                    onChanged: (val) {
+                      _searchHospitals(val.trim());
+                      setState(() {
+                        _selectedHospital = val;
+                      });
+                    },
+                    validator: (val) => val == null || val.isEmpty ? 'Select hospital' : null,
+                  ),
+                  if (_isSearchingHospitals)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8.0),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  if (_hospitalSuggestions.isNotEmpty)
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _hospitalSuggestions.length,
+                        itemBuilder: (context, index) {
+                          final suggestion = _hospitalSuggestions[index];
+                          return ListTile(
+                            title: Text(suggestion),
+                            onTap: () {
+                              _hospitalSearchController.text = suggestion;
+                              setState(() {
+                                _selectedHospital = suggestion;
+                                _hospitalSuggestions = [];
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _patientNameController,

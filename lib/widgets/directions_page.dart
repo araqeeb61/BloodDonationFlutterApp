@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 import 'custom_map_icons.dart';
 
 class DirectionsPage extends StatefulWidget {
@@ -32,11 +33,34 @@ class _DirectionsPageState extends State<DirectionsPage> {
   }
 
   Future<void> _fetchRoute() async {
-    final apiKey = 'AIzaSyAzf9iCCz6zIZ8ZlONwv-8HoEH3hAjI6no';
-    final url =
-        'https://maps.googleapis.com/maps/api/directions/json?origin=${widget.start.latitude},${widget.start.longitude}&destination=${widget.end.latitude},${widget.end.longitude}&mode=driving&key=$apiKey';
     try {
+      double startLat = widget.start.latitude;
+      double startLng = widget.start.longitude;
+      if (startLat == 0 && startLng == 0) {
+        // Try to get the user's current location
+        try {
+          final position = await Geolocator.getCurrentPosition();
+          startLat = position.latitude;
+          startLng = position.longitude;
+        } catch (e) {
+          setState(() {
+            _error = 'Live user location not available. Please enable location services.';
+            _loading = false;
+          });
+          return;
+        }
+      }
+      final apiKey = 'AIzaSyAzf9iCCz6zIZ8ZlONwv-8HoEH3hAjI6no';
+      final url =
+          'https://maps.googleapis.com/maps/api/directions/json?origin=$startLat,$startLng&destination=${widget.end.latitude},${widget.end.longitude}&mode=driving&key=$apiKey';
       final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) {
+        setState(() {
+          _error = 'Failed to fetch directions: HTTP ${response.statusCode}';
+          _loading = false;
+        });
+        return;
+      }
       final data = json.decode(response.body);
       if (data['status'] == 'OK') {
         final points = data['routes'][0]['overview_polyline']['points'];
@@ -52,13 +76,13 @@ class _DirectionsPageState extends State<DirectionsPage> {
         });
       } else {
         setState(() {
-          _error = data['status'];
+          _error = 'Directions API error: ${data['status']}';
           _loading = false;
         });
       }
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = 'Exception: ${e.runtimeType}: ${e.toString()}';
         _loading = false;
       });
     }
