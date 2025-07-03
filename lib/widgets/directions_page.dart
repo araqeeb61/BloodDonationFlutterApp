@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'custom_map_icons.dart';
 
 class DirectionsPage extends StatefulWidget {
   final LatLng start;
@@ -9,11 +10,11 @@ class DirectionsPage extends StatefulWidget {
   final String hospitalName;
 
   const DirectionsPage({
-    Key? key,
+    super.key,
     required this.start,
     required this.end,
     required this.hospitalName,
-  }) : super(key: key);
+  });
 
   @override
   State<DirectionsPage> createState() => _DirectionsPageState();
@@ -106,13 +107,13 @@ class _DirectionsPageState extends State<DirectionsPage> {
                 markerId: const MarkerId('start'),
                 position: widget.start,
                 infoWindow: const InfoWindow(title: 'Your Location'),
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+                icon: CustomMapIcons.personIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
               ),
               Marker(
                 markerId: const MarkerId('end'),
                 position: widget.end,
                 infoWindow: InfoWindow(title: widget.hospitalName),
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                icon: CustomMapIcons.bloodIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
               ),
             },
             polylines: _polylines,

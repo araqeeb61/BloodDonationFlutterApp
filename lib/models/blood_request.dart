@@ -87,12 +87,12 @@ class BloodRequest {
       donorLatitude: json['donorLatitude'] != null
           ? ((json['donorLatitude'] is num)
               ? (json['donorLatitude'] as num).toDouble()
-              : double.tryParse(json['donorLatitude'].toString()) ?? null)
+              : double.tryParse(json['donorLatitude'].toString()))
           : null,
       donorLongitude: json['donorLongitude'] != null
           ? ((json['donorLongitude'] is num)
               ? (json['donorLongitude'] as num).toDouble()
-              : double.tryParse(json['donorLongitude'].toString()) ?? null)
+              : double.tryParse(json['donorLongitude'].toString()))
           : null,
       lastLocationUpdate: json['lastLocationUpdate'] != null
           ? parseDate(json['lastLocationUpdate'])

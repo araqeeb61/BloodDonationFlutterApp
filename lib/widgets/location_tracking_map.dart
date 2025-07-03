@@ -4,6 +4,7 @@ import 'dart:async';
 import '../models/blood_request.dart';
 import 'package:geolocator/geolocator.dart';
 import 'directions_page.dart';
+import 'custom_map_icons.dart';
 
 class LocationTrackingMap extends StatefulWidget {
   final BloodRequest request;
@@ -38,16 +39,12 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
   @override
   void initState() {
     super.initState();
-    _determinePosition();
-    try {
-      _initializeMap();
-    } catch (e) {
-      print('Error initializing map: $e');
+    CustomMapIcons.loadIcons().then((_) {
       setState(() {
-        _hasError = true;
-        _errorMessage = e.toString();
+        _initializeMap();
       });
-    }
+    });
+    _determinePosition();
   }
 
   Future<void> _determinePosition() async {
@@ -81,12 +78,13 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
       final position = await Geolocator.getCurrentPosition();
       setState(() {
         _currentPosition = position;
+        _markers.removeWhere((m) => m.markerId.value == 'donor');
         _markers.add(
           Marker(
             markerId: const MarkerId('donor'),
             position: LatLng(position.latitude, position.longitude),
             infoWindow: const InfoWindow(title: 'Your Location'),
-            icon: BitmapDescriptor.defaultMarkerWithHue(200), // Sky blue dot
+            icon: CustomMapIcons.personIcon ?? BitmapDescriptor.defaultMarkerWithHue(200),
           ),
         );
       });
@@ -101,6 +99,7 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
       throw Exception('Invalid coordinates: NaN values detected');
     }
     // Add hospital marker
+    _markers.removeWhere((m) => m.markerId.value == 'hospital');
     _markers.add(
       Marker(
         markerId: const MarkerId('hospital'),
@@ -109,7 +108,7 @@ class _LocationTrackingMapState extends State<LocationTrackingMap> {
           title: 'Hospital',
           snippet: widget.request.hospital,
         ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(0), // Dark red (error) icon
+        icon: CustomMapIcons.bloodIcon ?? BitmapDescriptor.defaultMarkerWithHue(0),
       ),
     );
   }

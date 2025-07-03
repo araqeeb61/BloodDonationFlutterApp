@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../widgets/user_name_banner.dart';
 import '../widgets/location_tracking_map.dart';
 import '../models/blood_request.dart';
@@ -125,17 +124,34 @@ class RequestDetailsScreen extends StatelessWidget {
                   lat = loc['latitude'] ?? loc['lat'];
                   lng = loc['longitude'] ?? loc['lng'];
                 }
-                print('Raw latitude: $lat (${lat?.runtimeType})');
-                print('Raw longitude: $lng (${lng?.runtimeType})');
+                print('Raw latitude: $lat (${lat?.runtimeType})');
+                print('Raw longitude: $lng (${lng?.runtimeType})');
 
                 // Parse coordinates with robust handling
                 double? latitude;
                 double? longitude;
                 try {
-                  latitude = 24.8607; // Dummy latitude (e.g., Karachi)
-                  longitude = 67.0011; // Dummy longitude (e.g., Karachi)
+                  latitude = lat is double
+                      ? lat
+                      : lat is int
+                          ? lat.toDouble()
+                          : lat is String
+                              ? double.tryParse(lat)
+                              : null;
+                  longitude = lng is double
+                      ? lng
+                      : lng is int
+                          ? lng.toDouble()
+                          : lng is String
+                              ? double.tryParse(lng)
+                              : null;
+                  // Fallback to dummy values if parsing fails
+                  latitude ??= 24.8607; // Dummy latitude (e.g., Karachi)
+                  longitude ??= 67.0011; // Dummy longitude (e.g., Karachi)
                 } catch (e) {
                   print('Error parsing coordinates: $e');
+                  latitude = 24.8607;
+                  longitude = 67.0011;
                 }
 
                 print('Parsed coordinates: lat=$latitude, lng=$longitude');

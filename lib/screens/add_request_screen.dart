@@ -7,7 +7,7 @@ import '../widgets/user_name_banner.dart';
 class AddRequestScreen extends StatefulWidget {
   final Map<String, dynamic>? requestData;
   final String? requestId;
-  const AddRequestScreen({Key? key, this.requestData, this.requestId}) : super(key: key);
+  const AddRequestScreen({super.key, this.requestData, this.requestId});
 
   @override
   State<AddRequestScreen> createState() => _AddRequestScreenState();
@@ -81,8 +81,7 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
     } catch (e) {
       setState(() {
         _hospitalsLoading = false;
-        _hospitalsError = 'Failed to load hospitals: '
-            + (e is Exception ? e.toString() : 'Unknown error');
+        _hospitalsError = 'Failed to load hospitals: ${e is Exception ? e.toString() : 'Unknown error'}';
       });
     }
   }
@@ -233,7 +232,7 @@ class _AddRequestScreenState extends State<AddRequestScreen> {
                                 setState(() {
                                   _selectedHospital = val;
                                   final found = hospitalDocs.firstWhere((h) => h['name'] == val, orElse: () => {});
-                                  _selectedHospitalId = found['id'] ?? null;
+                                  _selectedHospitalId = found['id'];
                                 });
                               },
                               decoration: const InputDecoration(
